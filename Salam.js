@@ -8,7 +8,7 @@ const db = {
         {
             user_id: 'USR-1001',
             name: 'Fahad Al-Otaibi',
-            phone: '0501234567',
+            phone: '966501234567',
             email: 'fahad.otaibi@example.com',
             address: 'King Fahd Road, Building 402, Apt 12',
             city: 'Riyadh',
@@ -28,7 +28,7 @@ const db = {
         {
             user_id: 'USR-1002',
             name: 'Sarah Mansour',
-            phone: '0559876543',
+            phone: '966559876543',
             email: 'sarah.m@example.com',
             address: 'Olaya District, Villa 88',
             city: 'Riyadh',
@@ -147,6 +147,7 @@ function bootstrapDatabase() {
         console.log('  - [GET]  /api/users?phone=... OR /api/users?user_id=...');
         console.log('  - [POST] /api/users');
         console.log('  - [GET]  /api/available_slots?brand_id=...&category=...&location=...');
+        console.log('  - [POST] /api/slots');
         console.log('  - [POST] /api/schedule_visit');
         console.log('  - [GET]  /api/appointment_status?appointment_id=...');
         console.log('  - [GET]  /api/track_technician?appointment_id=... OR ?technician_id=...\n');
@@ -328,7 +329,54 @@ const server = http.createServer(async (req, res) => {
         }
 
         // -------------------------------------------------------------
-        // 4. SCHEDULE VISIT (Book fiber technician installation)
+        // 4. ADD NEW SLOT (Create technician availability slot)
+        // -------------------------------------------------------------
+        if ((pathname === '/api/slots' || pathname === '/api/technician_slots') && method === 'POST') {
+            const rawBody = await collectRequestBody(req);
+            if (!rawBody || !rawBody.trim()) {
+                res.statusCode = 400;
+                return res.end(JSON.stringify({ error: 'Request body cannot be empty.' }));
+            }
+
+            const payload = JSON.parse(rawBody);
+
+            const requiredFields = ['technician_id', 'brand_id', 'category', 'location', 'date', 'time_slot'];
+            const missing = requiredFields.filter(field => !payload[field]);
+
+            if (missing.length > 0) {
+                res.statusCode = 400;
+                return res.end(JSON.stringify({ error: `Missing required slot fields: ${missing.join(', ')}` }));
+            }
+
+            let maxSlotId = 2000;
+            db.technician_slots.forEach(s => {
+                if (s.slot_id && String(s.slot_id).startsWith('SLT-')) {
+                    const num = parseInt(String(s.slot_id).replace('SLT-', ''), 10);
+                    if (!isNaN(num) && num > maxSlotId) maxSlotId = num;
+                }
+            });
+
+            const newSlot = {
+                slot_id: `SLT-${maxSlotId + 1}`,
+                technician_id: payload.technician_id,
+                technician_name: payload.technician_name || 'Field Technician',
+                brand_id: payload.brand_id,
+                category: payload.category,
+                location: payload.location,
+                date: payload.date,
+                time_slot: payload.time_slot,
+                is_available: payload.is_available !== undefined ? payload.is_available : true
+            };
+
+            db.technician_slots.push(newSlot);
+            saveCollectionToDisk('technician_slots');
+
+            res.statusCode = 201;
+            return res.end(JSON.stringify(newSlot));
+        }
+
+        // -------------------------------------------------------------
+        // 5. SCHEDULE VISIT (Book fiber technician installation)
         // -------------------------------------------------------------
         if (pathname === '/api/schedule_visit' && method === 'POST') {
             const rawBody = await collectRequestBody(req);
@@ -396,7 +444,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         // -------------------------------------------------------------
-        // 5. APPOINTMENT STATUS
+        // 6. APPOINTMENT STATUS
         // -------------------------------------------------------------
         if (pathname === '/api/appointment_status' && method === 'GET') {
             const appointmentId = searchParams.get('appointment_id') || searchParams.get('id');
@@ -423,7 +471,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         // -------------------------------------------------------------
-        // 6. TRACK TECHNICIAN (Field engineer live location & ETA)
+        // 7. TRACK TECHNICIAN (Field engineer live location & ETA)
         // -------------------------------------------------------------
         if (pathname === '/api/track_technician' && method === 'GET') {
             const appointmentId = searchParams.get('appointment_id');
