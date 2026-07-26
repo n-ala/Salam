@@ -149,6 +149,8 @@ function bootstrapDatabase() {
         console.log('  - [GET]  /api/available_slots?brand_id=...&category=...&location=...');
         console.log('  - [POST] /api/slots');
         console.log('  - [POST] /api/schedule_visit');
+        console.log('  - [GET]  /api/appointments (?user_id=... &status=...)');
+        console.log('  - [PUT]  /api/appointments (or /api/modify_appointment)');
         console.log('  - [GET]  /api/appointment_status?appointment_id=...');
         console.log('  - [GET]  /api/track_technician?appointment_id=... OR ?technician_id=...\n');
     } catch (error) {
@@ -210,7 +212,7 @@ const server = http.createServer(async (req, res) => {
 
     // CORS Headers
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
     if (method === 'OPTIONS') {
@@ -222,7 +224,7 @@ const server = http.createServer(async (req, res) => {
 
     try {
         // -------------------------------------------------------------
-        // 1. GET USER (Directly returns profile containing embedded fiber contracts)
+        // 1. GET USER
         // -------------------------------------------------------------
         if (pathname === '/api/users' && method === 'GET') {
             const phoneParam = searchParams.get('phone') || searchParams.get('phonenumber');
@@ -255,7 +257,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         // -------------------------------------------------------------
-        // 2. NEW USER (Accepts initial fiber broadband contract payload)
+        // 2. NEW USER
         // -------------------------------------------------------------
         if (pathname === '/api/users' && method === 'POST') {
             const rawBody = await collectRequestBody(req);
@@ -305,7 +307,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         // -------------------------------------------------------------
-        // 3. GET AVAILABLE SLOTS (Filter by provider brand, category, city)
+        // 3. GET AVAILABLE SLOTS
         // -------------------------------------------------------------
         if (pathname === '/api/available_slots' && method === 'GET') {
             const filterBrand = searchParams.get('brand_id');
@@ -329,7 +331,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         // -------------------------------------------------------------
-        // 4. ADD NEW SLOT (Create technician availability slot)
+        // 4. ADD NEW SLOT
         // -------------------------------------------------------------
         if ((pathname === '/api/slots' || pathname === '/api/technician_slots') && method === 'POST') {
             const rawBody = await collectRequestBody(req);
@@ -376,7 +378,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         // -------------------------------------------------------------
-        // 5. SCHEDULE VISIT (Book fiber technician installation)
+        // 5. SCHEDULE VISIT
         // -------------------------------------------------------------
         if (pathname === '/api/schedule_visit' && method === 'POST') {
             const rawBody = await collectRequestBody(req);
@@ -444,7 +446,103 @@ const server = http.createServer(async (req, res) => {
         }
 
         // -------------------------------------------------------------
-        // 6. APPOINTMENT STATUS
+        // 6. GET ALL APPOINTMENTS
+        // -------------------------------------------------------------
+        if (pathname === '/api/appointments' && method === 'GET') {
+            const filterUser = searchParams.get('user_id');
+            const filterStatus = searchParams.get('status');
+
+            let results = db.appointments;
+
+            if (filterUser) {
+                results = results.filter(a => String(a.user_id).toLowerCase() === filterUser.toLowerCase().trim());
+            }
+
+            if (filterStatus) {
+                results = results.filter(a => String(a.status).toLowerCase() === filterStatus.toLowerCase().trim());
+            }
+
+            res.statusCode = 200;
+            return res.end(JSON.stringify(results));
+        }
+
+        // -------------------------------------------------------------
+        // 7. MODIFY APPOINTMENT (PUT /api/appointments or /api/modify_appointment)
+        // -------------------------------------------------------------
+        if ((pathname === '/api/appointments' || pathname === '/api/modify_appointment') && (method === 'PUT' || method === 'POST')) {
+            const rawBody = await collectRequestBody(req);
+            if (!rawBody || !rawBody.trim()) {
+                res.statusCode = 400;
+                return res.end(JSON.stringify({ error: 'Request body cannot be empty.' }));
+            }
+
+            const payload = JSON.parse(rawBody);
+            const targetAppId = payload.appointment_id || payload.id;
+
+            if (!targetAppId) {
+                res.statusCode = 400;
+                return res.end(JSON.stringify({ error: 'Missing required field: appointment_id.' }));
+            }
+
+            const appIndex = db.appointments.findIndex(a => String(a.appointment_id).toLowerCase() === String(targetAppId).toLowerCase().trim());
+            if (appIndex === -1) {
+                res.statusCode = 404;
+                return res.end(JSON.stringify({ error: 'Appointment not found.' }));
+            }
+
+            const currentApp = db.appointments[appIndex];
+
+            // If rescheduling to a new slot
+            if (payload.slot_id && String(payload.slot_id).toLowerCase() !== String(currentApp.slot_id).toLowerCase()) {
+                const newSlotIndex = db.technician_slots.findIndex(s => String(s.slot_id).toLowerCase() === String(payload.slot_id).toLowerCase());
+                
+                if (newSlotIndex === -1) {
+                    res.statusCode = 404;
+                    return res.end(JSON.stringify({ error: 'Target new slot_id not found.' }));
+                }
+
+                const newSlot = db.technician_slots[newSlotIndex];
+                if (newSlot.is_available === false) {
+                    res.statusCode = 409;
+                    return res.end(JSON.stringify({ error: 'Target new slot is no longer available.' }));
+                }
+
+                // Free up the old slot
+                const oldSlotIndex = db.technician_slots.findIndex(s => String(s.slot_id).toLowerCase() === String(currentApp.slot_id).toLowerCase());
+                if (oldSlotIndex !== -1) {
+                    db.technician_slots[oldSlotIndex].is_available = true;
+                }
+
+                // Reserve the new slot
+                db.technician_slots[newSlotIndex].is_available = false;
+                saveCollectionToDisk('technician_slots');
+
+                // Update appointment slot attributes
+                currentApp.slot_id = newSlot.slot_id;
+                currentApp.technician_id = newSlot.technician_id || currentApp.technician_id;
+                currentApp.technician_name = newSlot.technician_name || currentApp.technician_name;
+                currentApp.visit_date = newSlot.date || currentApp.visit_date;
+                currentApp.time_slot = newSlot.time_slot || currentApp.time_slot;
+            }
+
+            // Update optional fields if provided
+            if (payload.status) currentApp.status = payload.status;
+            if (payload.service_type) currentApp.service_type = payload.service_type;
+            if (payload.notes !== undefined) currentApp.notes = payload.notes;
+            if (payload.visit_date && !payload.slot_id) currentApp.visit_date = payload.visit_date;
+            if (payload.time_slot && !payload.slot_id) currentApp.time_slot = payload.time_slot;
+
+            currentApp.updated_at = new Date().toISOString();
+
+            db.appointments[appIndex] = currentApp;
+            saveCollectionToDisk('appointments');
+
+            res.statusCode = 200;
+            return res.end(JSON.stringify(currentApp));
+        }
+
+        // -------------------------------------------------------------
+        // 8. APPOINTMENT STATUS
         // -------------------------------------------------------------
         if (pathname === '/api/appointment_status' && method === 'GET') {
             const appointmentId = searchParams.get('appointment_id') || searchParams.get('id');
@@ -471,7 +569,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         // -------------------------------------------------------------
-        // 7. TRACK TECHNICIAN (Field engineer live location & ETA)
+        // 9. TRACK TECHNICIAN
         // -------------------------------------------------------------
         if (pathname === '/api/track_technician' && method === 'GET') {
             const appointmentId = searchParams.get('appointment_id');
