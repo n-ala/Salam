@@ -1,0 +1,17 @@
+{
+  "name": "ST-api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "Salam.js",
+  "scripts": {
+    "start": "node Salam.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "mammoth": "^1.6.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
