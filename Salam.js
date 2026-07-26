@@ -8,7 +8,7 @@ const db = {
         {
             user_id: 'USR-1001',
             name: 'Fahad Al-Otaibi',
-            phone: '966501234567',
+            phone: '0501234567',
             email: 'fahad.otaibi@example.com',
             address: 'King Fahd Road, Building 402, Apt 12',
             city: 'Riyadh',
@@ -28,7 +28,7 @@ const db = {
         {
             user_id: 'USR-1002',
             name: 'Sarah Mansour',
-            phone: '966559876543',
+            phone: '0559876543',
             email: 'sarah.m@example.com',
             address: 'Olaya District, Villa 88',
             city: 'Riyadh',
