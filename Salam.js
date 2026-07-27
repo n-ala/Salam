@@ -19,6 +19,7 @@ const db = {
                     brand_id: 'STC_FIBER',
                     category: 'FIBER_BROADBAND',
                     contract_type: '500 Mbps FTTH Plan',
+                    fiber_plate_number: '12340003',
                     status: 'Active',
                     start_date: '2026-01-01',
                     end_date: '2027-01-01'
@@ -39,6 +40,7 @@ const db = {
                     brand_id: 'MOBILY_FIBER',
                     category: 'FIBER_BROADBAND',
                     contract_type: '1000 Mbps Fiber Ultra',
+                    fiber_plate_number: '12340002',
                     status: 'Active',
                     start_date: '2025-06-01',
                     end_date: '2027-06-01'
