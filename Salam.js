@@ -315,9 +315,10 @@ const server = http.createServer(async (req, res) => {
             const filterBrand = searchParams.get('brand_id');
             const filterCategory = searchParams.get('category') || searchParams.get('category_id');
             const filterLocation = searchParams.get('location') || searchParams.get('location_id');
-
+            const filterPlateNumber = searchParams.get('fiber_plate_number') || searchParams.get('fiberPlateNumber');
+        
             let matchedSlots = db.technician_slots.filter(slot => slot.is_available !== false);
-
+        
             if (filterBrand) {
                 matchedSlots = matchedSlots.filter(s => String(s.brand_id).toUpperCase() === filterBrand.toUpperCase());
             }
@@ -327,7 +328,23 @@ const server = http.createServer(async (req, res) => {
             if (filterLocation) {
                 matchedSlots = matchedSlots.filter(s => String(s.location || s.location_id).toLowerCase().trim() === filterLocation.toLowerCase().trim());
             }
-
+            if (filterPlateNumber) {
+                matchedSlots = matchedSlots.filter(s => {
+                    const plate = s.fiber_plate_number || (s.location_details && s.location_details.fiber_plate_number);
+                    return plate && String(plate).toLowerCase().trim() === filterPlateNumber.toLowerCase().trim();
+                });
+            }
+        
+            // Return 404 if no slots match the criteria
+            if (matchedSlots.length === 0) {
+                res.statusCode = 404;
+                return res.end(JSON.stringify({
+                    status: 'error',
+                    code: 'NO_SLOTS_AVAILABLE',
+                    message: 'No available appointment slots found matching the criteria.'
+                }));
+            }
+        
             res.statusCode = 200;
             return res.end(JSON.stringify(matchedSlots));
         }
