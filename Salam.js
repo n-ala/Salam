@@ -688,18 +688,35 @@ const server = http.createServer(async (req, res) => {
         // -------------------------------------------------------------
         // 11. COMPLAINTS & TICKETING
         // -------------------------------------------------------------
-        if (pathname === '/api/tickets/complaint' && method === 'POST') {
-            const rawBody = await collectRequestBody(req);
-            const payload = JSON.parse(rawBody || '{}');
-
-            const ticketId = `TKT-${Math.floor(10000 + Math.random() * 90000)}`;
-            const ticket = { ticket_id: ticketId, ...payload, created_at: new Date().toISOString() };
-            db.tickets.push(ticket);
-            saveCollectionToDisk('tickets');
-
-            res.statusCode = 201;
-            return res.end(JSON.stringify({ status: 'Open', ticket_id: ticketId, assigned_team: 'Technical_Support' }));
-        }
+      if (pathname === '/api/tickets/complaint' && method === 'POST') {
+        const rawBody = await collectRequestBody(req);
+        const payload = JSON.parse(rawBody || '{}');
+    
+        // 1. Generate new ticket metadata
+        const ticketId = `TCK-${Math.floor(100000 + Math.random() * 900000)}`;
+        const newTicket = {
+            ticket_id: ticketId,
+            user_id: payload.user_id,
+            contract_id: payload.contract_id,
+            issue_type: payload.issue_type,
+            description: payload.description,
+            priority: payload.priority || 'Medium',
+            status: 'Open',
+            created_at: new Date().toISOString()
+        };
+    
+        // 2. Persist to mock database
+        db.tickets = db.tickets || [];
+        db.tickets.push(newTicket);
+    
+        // 3. Return response with created ticket details
+        return res.end(JSON.stringify({
+            status: 'SUCCESS',
+            ticket_id: ticketId,
+            ticket: newTicket,
+            message: 'Complaint ticket created successfully.'
+        }));
+    }
 
         res.statusCode = 404;
         return res.end(JSON.stringify({ error: `Route '${pathname}' not found.` }));
