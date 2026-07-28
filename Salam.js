@@ -638,7 +638,7 @@ const server = http.createServer(async (req, res) => {
         }
         
         // -------------------------------------------------------------
-        // 10. RENEW CONTRACT
+        // 10. RENEW OR CANCEL CONTRACT
         // -------------------------------------------------------------
         if (pathname === '/api/contracts/renew' && method === 'POST') {
             const rawBody = await collectRequestBody(req);
@@ -646,14 +646,6 @@ const server = http.createServer(async (req, res) => {
         
             const contractId = payload.contract_id || payload.account_id;
             const newPlanId = payload.plan_id;
-        
-            // Mapping plan IDs to human-readable contract_type descriptions
-            const PLAN_NAME_MAP = {
-                'PLAN-500M': '500 Mbps Fiber',
-                'PLAN-1000M': '1 Gbps Fiber',
-                'PLAN-500-FTTH': '500 Mbps FTTH Fiber',
-                'PLAN-300M': '300 Mbps Fiber'
-            };
         
             // 1. Find the user who owns this contract
             const user = db.users.find(u => 
@@ -665,34 +657,49 @@ const server = http.createServer(async (req, res) => {
                 return res.end(JSON.stringify({ status: 'FAILED', message: 'Contract not found' }));
             }
         
-            // 2. Find and update the specific contract inside the user's contracts array
             const targetContract = user.contracts.find(c => c.contract_id === contractId);
         
-            if (targetContract) {
-                // Update plan ID
-                if (newPlanId) {
-                    targetContract.plan_id = newPlanId;
-                    
-                    // Map plan_id to readable contract_type, falling back to payload value if provided
-                    targetContract.contract_type = PLAN_NAME_MAP[newPlanId] || payload.contract_type || targetContract.contract_type;
-                }
+            // 2. Check if customer refused renewal (e.g. plan_id is "CANCEL", "NONE", "REFUSE", or null)
+            const isRefused = !newPlanId || ['CANCEL', 'NONE', 'REFUSE', 'DECLINE'].includes(newPlanId.toUpperCase());
         
-                // Extend dates and update status
-                targetContract.status = 'Active';
-                
-                const currentEndDate = new Date(targetContract.end_date || Date.now());
-                currentEndDate.setFullYear(currentEndDate.getFullYear() + 1);
-                targetContract.end_date = currentEndDate.toISOString().split('T')[0];
+            if (isRefused) {
+                targetContract.status = 'Pending Expiration';
+                targetContract.auto_renew = false;
+        
+                return res.end(JSON.stringify({
+                    status: 'SUCCESS',
+                    contract_id: contractId,
+                    contract_status: targetContract.status,
+                    message: 'Renewal declined. Contract will expire at the end of its current term.',
+                    updated_contract: targetContract
+                }));
             }
         
-            // 3. Return response with confirmation
-            const confNumber = `${Math.floor(100000 + Math.random() * 900000)}`;
+            // 3. Normal Renewal Path
+            const PLAN_NAME_MAP = {
+                'PLAN-500M': '500 Mbps Fiber',
+                'PLAN-1000M': '1 Gbps Fiber',
+                'PLAN-500-FTTH': '500 Mbps FTTH Fiber',
+                'PLAN-300M': '300 Mbps Fiber'
+            };
+        
+            targetContract.plan_id = newPlanId;
+            targetContract.contract_type = PLAN_NAME_MAP[newPlanId] || targetContract.contract_type;
+            targetContract.status = 'Active';
+            targetContract.auto_renew = true;
+            
+            // Extend end date by 1 year
+            const currentEndDate = new Date(targetContract.end_date || Date.now());
+            currentEndDate.setFullYear(currentEndDate.getFullYear() + 1);
+            targetContract.end_date = currentEndDate.toISOString().split('T')[0];
+        
+            const confNumber = `CONF-${Math.floor(100000 + Math.random() * 900000)}`;
             return res.end(JSON.stringify({
                 status: 'SUCCESS',
                 ConfirmationNumber: confNumber,
                 contract_id: contractId,
                 plan_id: newPlanId,
-                contract_type: targetContract ? targetContract.contract_type : undefined,
+                contract_type: targetContract.contract_type,
                 updated_contract: targetContract,
                 message: 'Contract renewed successfully.'
             }));
