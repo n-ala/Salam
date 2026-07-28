@@ -18,7 +18,8 @@ const db = {
                     contract_id: 'CTR-8801',
                     brand_id: 'STC_FIBER',
                     category: 'FIBER_BROADBAND',
-                    contract_type: '500 Mbps FTTH Plan',
+                    contract_type: '500 Mbps Fiber',
+                    plan_id: 'PLAN-500M',
                     fiber_plate_number: '12340003',
                     status: 'Active',
                     start_date: '2026-01-01',
@@ -39,7 +40,8 @@ const db = {
                     contract_id: 'CTR-8802',
                     brand_id: 'MOBILY_FIBER',
                     category: 'FIBER_BROADBAND',
-                    contract_type: '1000 Mbps Fiber Ultra',
+                    contract_type: '1000 Mbps Fiber',
+                    plan_id:'PLAN-1000M',
                     fiber_plate_number: '12340002',
                     status: 'Active',
                     start_date: '2025-06-01',
@@ -633,6 +635,70 @@ const server = http.createServer(async (req, res) => {
 
             res.statusCode = 200;
             return res.end(JSON.stringify(trackingData));
+        }
+        
+        // -------------------------------------------------------------
+        // 10. RENEW CONTRACT
+        // -------------------------------------------------------------
+        if (pathname === '/api/contracts/renew' && method === 'POST') {
+            const rawBody = await collectRequestBody(req);
+            const payload = JSON.parse(rawBody || '{}');
+        
+            const contractId = payload.contract_id || payload.account_id;
+            const newPlanId = payload.plan_id;
+        
+            // 1. Find the user who owns this contract
+            const user = db.users.find(u => 
+                u.contracts && u.contracts.some(c => c.contract_id === contractId)
+            );
+        
+            if (!user) {
+                res.statusCode = 404;
+                return res.end(JSON.stringify({ status: 'FAILED', message: 'Contract not found' }));
+            }
+        
+            // 2. Find and update the specific contract inside the user's contracts array
+            const targetContract = user.contracts.find(c => c.contract_id === contractId);
+        
+            if (targetContract) {
+                // Update plan ID
+                if (newPlanId) targetContract.plan_id = newPlanId;
+        
+                // Optionally extend dates or update status
+                targetContract.status = 'Active';
+                
+                // Example logic to extend end_date by 1 year
+                const currentEndDate = new Date(targetContract.end_date || Date.now());
+                currentEndDate.setFullYear(currentEndDate.getFullYear() + 1);
+                targetContract.end_date = currentEndDate.toISOString().split('T')[0];
+            }
+        
+            // 3. Return response with confirmation
+            const confNumber = `CONF-${Math.floor(100000 + Math.random() * 900000)}`;
+            return res.end(JSON.stringify({
+                status: 'SUCCESS',
+                ConfirmationNumber: confNumber,
+                contract_id: contractId,
+                plan_id: newPlanId,
+                updated_contract: targetContract, // optional: send back updated object
+                message: 'Contract renewed successfully.'
+            }));
+        }
+
+        // -------------------------------------------------------------
+        // 11. COMPLAINTS & TICKETING
+        // -------------------------------------------------------------
+        if (pathname === '/api/tickets/complaint' && method === 'POST') {
+            const rawBody = await collectRequestBody(req);
+            const payload = JSON.parse(rawBody || '{}');
+
+            const ticketId = `TKT-${Math.floor(10000 + Math.random() * 90000)}`;
+            const ticket = { ticket_id: ticketId, ...payload, created_at: new Date().toISOString() };
+            db.tickets.push(ticket);
+            saveCollectionToDisk('tickets');
+
+            res.statusCode = 201;
+            return res.end(JSON.stringify({ status: 'Open', ticket_id: ticketId, assigned_team: 'Technical_Support' }));
         }
 
         res.statusCode = 404;
