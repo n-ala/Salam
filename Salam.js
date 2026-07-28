@@ -646,6 +646,7 @@ const server = http.createServer(async (req, res) => {
         
             const contractId = payload.contract_id || payload.account_id;
             const newPlanId = payload.plan_id;
+            const reason = payload.reason || '';
         
             // 1. Find the user who owns this contract
             const user = db.users.find(u => 
@@ -659,23 +660,25 @@ const server = http.createServer(async (req, res) => {
         
             const targetContract = user.contracts.find(c => c.contract_id === contractId);
         
-            // 2. Check if customer refused renewal (e.g. plan_id is "CANCEL", "NONE", "REFUSE", or null)
+            // 2. Check if customer refused renewal
             const isRefused = !newPlanId || ['CANCEL', 'NONE', 'REFUSE', 'DECLINE'].includes(newPlanId.toUpperCase());
         
             if (isRefused) {
                 targetContract.status = 'Pending Expiration';
                 targetContract.auto_renew = false;
+                targetContract.cancellation_reason = reason || 'Customer refused renewal offer';
         
                 return res.end(JSON.stringify({
                     status: 'SUCCESS',
                     contract_id: contractId,
                     contract_status: targetContract.status,
+                    cancellation_reason: targetContract.cancellation_reason,
                     message: 'Renewal declined. Contract will expire at the end of its current term.',
                     updated_contract: targetContract
                 }));
             }
         
-            // 3. Normal Renewal Path
+            // 3. Renewal Path
             const PLAN_NAME_MAP = {
                 'PLAN-500M': '500 Mbps Fiber',
                 'PLAN-1000M': '1 Gbps Fiber',
@@ -687,6 +690,7 @@ const server = http.createServer(async (req, res) => {
             targetContract.contract_type = PLAN_NAME_MAP[newPlanId] || targetContract.contract_type;
             targetContract.status = 'Active';
             targetContract.auto_renew = true;
+            targetContract.cancellation_reason = null; // Cleared on successful renewal
             
             // Extend end date by 1 year
             const currentEndDate = new Date(targetContract.end_date || Date.now());
@@ -700,11 +704,11 @@ const server = http.createServer(async (req, res) => {
                 contract_id: contractId,
                 plan_id: newPlanId,
                 contract_type: targetContract.contract_type,
+                cancellation_reason: null,
                 updated_contract: targetContract,
                 message: 'Contract renewed successfully.'
             }));
         }
-
         // -------------------------------------------------------------
         // 11. COMPLAINTS & TICKETING
         // -------------------------------------------------------------
