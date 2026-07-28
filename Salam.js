@@ -686,7 +686,7 @@ const server = http.createServer(async (req, res) => {
             }
         
             // 3. Return response with confirmation
-            const confNumber = `CONF-${Math.floor(100000 + Math.random() * 900000)}`;
+            const confNumber = `${Math.floor(100000 + Math.random() * 900000)}`;
             return res.end(JSON.stringify({
                 status: 'SUCCESS',
                 ConfirmationNumber: confNumber,
