@@ -647,6 +647,14 @@ const server = http.createServer(async (req, res) => {
             const contractId = payload.contract_id || payload.account_id;
             const newPlanId = payload.plan_id;
         
+            // Mapping plan IDs to human-readable contract_type descriptions
+            const PLAN_NAME_MAP = {
+                'PLAN-500M': '500 Mbps Fiber',
+                'PLAN-1000M': '1 Gbps Fiber',
+                'PLAN-500-FTTH': '500 Mbps FTTH Fiber',
+                'PLAN-300M': '300 Mbps Fiber'
+            };
+        
             // 1. Find the user who owns this contract
             const user = db.users.find(u => 
                 u.contracts && u.contracts.some(c => c.contract_id === contractId)
@@ -662,12 +670,16 @@ const server = http.createServer(async (req, res) => {
         
             if (targetContract) {
                 // Update plan ID
-                if (newPlanId) targetContract.plan_id = newPlanId;
+                if (newPlanId) {
+                    targetContract.plan_id = newPlanId;
+                    
+                    // Map plan_id to readable contract_type, falling back to payload value if provided
+                    targetContract.contract_type = PLAN_NAME_MAP[newPlanId] || payload.contract_type || targetContract.contract_type;
+                }
         
-                // Optionally extend dates or update status
+                // Extend dates and update status
                 targetContract.status = 'Active';
                 
-                // Example logic to extend end_date by 1 year
                 const currentEndDate = new Date(targetContract.end_date || Date.now());
                 currentEndDate.setFullYear(currentEndDate.getFullYear() + 1);
                 targetContract.end_date = currentEndDate.toISOString().split('T')[0];
@@ -680,7 +692,8 @@ const server = http.createServer(async (req, res) => {
                 ConfirmationNumber: confNumber,
                 contract_id: contractId,
                 plan_id: newPlanId,
-                updated_contract: targetContract, // optional: send back updated object
+                contract_type: targetContract ? targetContract.contract_type : undefined,
+                updated_contract: targetContract,
                 message: 'Contract renewed successfully.'
             }));
         }
